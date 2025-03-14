@@ -25,6 +25,9 @@ export class SupabaseService {
       this.configService.get(SUPABASE_URL),
       this.configService.get(SUPABASE_API_KEY),
     );
+
+    // sign in service to Supabase
+    this.signInAsService();
   }
 
   /**
@@ -140,38 +143,16 @@ export class SupabaseService {
   }
 
   /**
-   * Get a Superbase User
+   * Sign service in as Supabase user.
+   * This user is necessary to create Chatrooms
    *
-   * @param token   the service auth token
-   * @param isAdmin is admin user
-   * @returns       a Supabase user
    */
-  async getSupabaseUser(token: string, isAdmin: boolean) {
-    const {
-      data: { user },
-      error,
-    } = await this.supabase.auth.getUser(token);
+  private async signInAsService() {
+    await this.supabase.auth.signOut();
 
-    if (error || !user) {
-      console.log('Error using auth token: ', error.message);
-
-      // if is the admin service, then sign in and return admin user
-      if (isAdmin) {
-        await this.supabase.auth.signOut();
-
-        const {
-          data: { user },
-        } = await this.supabase.auth.signInWithPassword({
-          email: this.configService.get(SERVICE_EMAIL),
-          password: this.configService.get(SERVICE_PASSWORD),
-        });
-
-        return user;
-      }
-
-      throw new UnauthorizedException('User auth token is invalid or expired');
-    }
-
-    return user;
+    await this.supabase.auth.signInWithPassword({
+      email: this.configService.get(SERVICE_EMAIL),
+      password: this.configService.get(SERVICE_PASSWORD),
+    });
   }
 }
