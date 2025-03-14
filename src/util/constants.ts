@@ -5,3 +5,7 @@ export const INSERT = 'INSERT';
 export const PUBLIC = 'public';
 export const OK = 200;
 export const INTERNAL_SERVER_ERROR = 500;
+export const SERVICE_EMAIL = 'SERVICE_EMAIL';
+export const SERVICE_PASSWORD = 'SERVICE_PASSWORD';
+export const MESSAGES = 'Messages';
+export const CHATROOMS = 'Chatrooms';

@@ -13,14 +13,7 @@ export class MessageController {
     @Res() response: Response,
     @Body() messageDTO: MessageDTO,
   ) {
-    try {
-      const data = await this.supabaseService.insertMessage(
-        'Messages',
-        messageDTO,
-      );
+      const data = await this.supabaseService.insertMessage(messageDTO);
       response.status(OK).json(data);
-    } catch (error) {
-      response.status(INTERNAL_SERVER_ERROR).json(error);
-    }
   }
 }
