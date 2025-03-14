@@ -1,10 +1,7 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { ChatroomDTO } from 'src/dto/chatroom.dto';
 import { MessageDTO } from 'src/dto/message.dto';
 import { ChatroomEntity } from 'src/entity/chatroom.entity';
 import {
@@ -18,141 +15,151 @@ import {
 
 @Injectable()
 export class SupabaseService {
-  supabase: SupabaseClient;
+  private readonly supabase: SupabaseClient;
 
   constructor(private readonly configService: ConfigService) {
     this.supabase = createClient(
-      this.configService.get(SUPABASE_URL),
-      this.configService.get(SUPABASE_API_KEY),
+      this.configService.get<string>(SUPABASE_URL),
+      this.configService.get<string>(SUPABASE_API_KEY),
     );
 
-    // sign in service to Supabase
     this.signInAsService();
   }
 
   /**
-   * Insert a message into the Messages table
-   *
-   * @param message the message to insert
-   * @returns       the result of the insertation
+   * Inserts a message into the Messages table.
+   * @param message The message to insert.
+   * @returns The inserted message data.
    */
   async insertMessage(message: MessageDTO) {
-    const { data, error } = await this.supabase.from(MESSAGES).insert([
-      {
-        sender: message.sender,
-        recipient: message.recipient,
-        message: message.message,
-        created_at: new Date().toISOString(),
-      },
-    ]);
+    try {
+      const { data, error } = await this.supabase.from(MESSAGES).insert([
+        {
+          senderName: message.senderName,
+          senderId: message.senderId,
+          message: message.message,
+          chatroomId: message.chatroomId,
+          created_at: new Date().toISOString(),
+        },
+      ]);
 
-    if (error) {
-      console.log('Error inserting message: ', { error: error });
+      if (error) {
+        throw new InternalServerErrorException(
+          `Error inserting message: ${error.message}`,
+        );
+      }
 
-      throw new InternalServerErrorException(
-        'Error inserting message: ',
-        error.message,
-      );
+      return data;
+    } catch (error) {
+      console.error('Error inserting message:', error);
+      throw error;
     }
-    return data;
   }
 
   /**
-   * Create a chatroom by creating a row in the Chatrooms table
-   *
-   * @param userId the id of the user creating the chatroom
-   * @returns      the result of the insertation
+   * Creates a chatroom or joins an existing one.
+   * @param chatroomDTO User data to join or create a chatroom.
+   * @returns The inserted chatroom data or void if joined an existing one.
    */
-  async createChatroom(userId: string) {
-    const chatroom = await this.getAvailableChatroom();
+  async createChatroom(chatroomDTO: ChatroomDTO) {
+    try {
+      const chatroom = await this.getAvailableChatroom();
 
-    if (chatroom) {
-      if (chatroom.user1 === userId) {
-        // this is the room the current user is in
-        return;
-      } else {
-        // the room is available to join
-        await this.joinChatroom(chatroom.id, userId);
+      if (chatroom) {
+        if (chatroom.user1 === chatroomDTO.userId) return;
+        await this.joinChatroom(
+          chatroom.id,
+          chatroomDTO.userId,
+          chatroomDTO.username,
+        );
         return;
       }
+
+      const { data, error } = await this.supabase
+        .from(CHATROOMS)
+        .insert([
+          { user1: chatroomDTO.userId, username1: chatroomDTO.username },
+        ]);
+
+      if (error) {
+        throw new InternalServerErrorException(
+          `Error creating chatroom: ${error.message}`,
+        );
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error creating chatroom:', error);
+      throw error;
     }
-
-    // create a new chatroom
-    const { data, error } = await this.supabase.from(CHATROOMS).insert([
-      {
-        user1: userId,
-        user2: '',
-      },
-    ]);
-
-    if (error) {
-      console.log('Error creating chatroom: ', { error: error });
-
-      throw new InternalServerErrorException(
-        'Error creating chatroom: ',
-        error.message,
-      );
-    }
-    return data;
   }
 
   /**
-   * Fetch an available chatroom
-   *
-   * @param userId the id of the current user
-   * @return       the available chatroom entity or null if none available
+   * Fetches an available chatroom.
+   * @returns The available chatroom entity or null if none available.
    */
   async getAvailableChatroom(): Promise<ChatroomEntity | null> {
-    const { data, error } = await this.supabase
-      .from(CHATROOMS)
-      .select('*')
-      .order('id', { ascending: false })
-      .limit(1);
+    try {
+      const { data, error } = await this.supabase
+        .from(CHATROOMS)
+        .select('*')
+        .order('id', { ascending: false })
+        .limit(1);
 
-    if (error) {
-      console.error('Error fetching last row:', error);
+      if (error) {
+        throw new InternalServerErrorException(
+          `Error fetching chatroom: ${error.message}`,
+        );
+      }
+
+      const chatroom = data?.[0] as ChatroomEntity;
+      return chatroom && !chatroom.user2 ? chatroom : null;
+    } catch (error) {
+      console.error('Error fetching available chatroom:', error);
       return null;
     }
-
-    const chatroom = data[0] as ChatroomEntity;
-
-    // if user2 is empty, user1 will exist and this chat can be joined.
-    if (chatroom.user2 === '') {
-      return chatroom;
-    }
-
-    return null;
   }
 
   /**
-   * Join an available chatroom
-   *
-   * @param chatroomId the id of the existing chatroom
-   * @param newUser2   the id of the user joining
+   * Joins an available chatroom.
+   * @param chatroomId The chatroom ID to join.
+   * @param newUser2 The ID of the user joining.
+   * @param newUsername2 The username of the joining user.
    */
-  async joinChatroom(chatroomId: number, newUser2: string) {
-    const { error } = await this.supabase
-      .from(CHATROOMS)
-      .update({ user2: newUser2 })
-      .eq('id', chatroomId);
+  async joinChatroom(
+    chatroomId: number,
+    newUser2: string,
+    newUsername2: string,
+  ) {
+    try {
+      const { error } = await this.supabase
+        .from(CHATROOMS)
+        .update({ username2: newUsername2, user2: newUser2 })
+        .eq('id', chatroomId);
 
-    if (error) {
+      if (error) {
+        throw new InternalServerErrorException(
+          `Error updating chatroom: ${error.message}`,
+        );
+      }
+    } catch (error) {
       console.error('Error updating chatroom:', error);
-      throw new InternalServerErrorException('Error updating chatroom');
+      throw error;
     }
   }
 
   /**
-   * Sign service in as Supabase user.
-   * This user is necessary to create Chatrooms
-   *
+   * Signs the service in as a Supabase user.
    */
   private async signInAsService() {
-    await this.supabase.auth.signOut();
-
-    await this.supabase.auth.signInWithPassword({
-      email: this.configService.get(SERVICE_EMAIL),
-      password: this.configService.get(SERVICE_PASSWORD),
-    });
+    try {
+      await this.supabase.auth.signOut();
+      await this.supabase.auth.signInWithPassword({
+        email: this.configService.get<string>(SERVICE_EMAIL),
+        password: this.configService.get<string>(SERVICE_PASSWORD),
+      });
+    } catch (error) {
+      console.error('Error signing in as service:', error);
+    }
   }
 }

@@ -1,5 +1,7 @@
 export interface ChatroomDTO {
-    user1: string;
+    /** the id of the user */
+    userId: string;
 
-    user2: string;
+    /** the name of the user */
+    username: string;
 }

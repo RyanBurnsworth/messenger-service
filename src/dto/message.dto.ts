@@ -2,9 +2,11 @@
  * Data Transfer Object for handling Message data
  */
 export interface MessageDTO {
-    sender: string;
+    senderName: string;
 
-    recipient: string;
+    senderId: string;
 
     message: string;
+
+    chatroomId: number;
 }
